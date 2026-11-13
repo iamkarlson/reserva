@@ -112,7 +112,7 @@ Navigation is vim-style.
 | `R` | rename the selected session |
 | `a` | archive or unarchive the selected session |
 | `A` | show or hide archived sessions |
-| `/` | filter sessions by title, prompt, branch or path (see [Search](#search)) |
+| `/` | filter sessions by title, prompt, branch or path; `enter` also searches conversation texts (see [Search](#search)) |
 | `s` / `S` | next sort key (activity, path, name, branch) / reverse the order |
 | `m` | toggle the [merge request](#merge-requests) view |
 | `r` | reload (and refetch merge requests) |
@@ -166,6 +166,16 @@ name or path (fuzzy matching on long prompts and paths would let almost
 anything through), or as a prefix of its ID. A term with an upper-case
 letter is matched case-sensitively. With a filter on, the list is ranked by
 how well the titles match.
+
+`enter` in the filter prompt also searches the conversation texts: the
+session files are read in full, so prompts, replies and tool output all
+count, and the sessions that mention every term as plain text (ignoring
+case) join the list. Sessions found only this way are marked `≈`, and with
+one of them under the cursor the first lines that mention a term are shown
+under the list, with who wrote them (`user`, `assistant`, `tool`) and the
+terms highlighted. There is no index: every search reads the files again,
+about a second per gigabyte, and the result is dropped as soon as the
+filter changes.
 
 
 ## Worktrees

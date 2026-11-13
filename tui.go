@@ -59,6 +59,14 @@ type liveMsg struct{}
 
 type rescanMsg struct{}
 
+// scanMsg carries the result of a content search: snippets per session ID
+// for the sessions whose files mention every term of the filter.
+type scanMsg struct {
+	profile string
+	filter  string
+	hits    map[string][]string
+}
+
 type forgeTickMsg struct{}
 
 type mrsMsg struct {
@@ -88,6 +96,8 @@ type model struct {
 	mode       mode
 	input      string
 	filter     string
+	hits       map[string][]string // content search results per session ID, nil = not searched
+	scanning   bool
 	status     string
 	lastKey    string
 	launchWT   bool     // pending new-session: use a worktree
@@ -616,7 +626,7 @@ func (m *model) buildSessionRows(f string) {
 			if s.Archived && !m.showArchived {
 				continue
 			}
-			if f == "" || matches(s, f) {
+			if f == "" || matches(s, f) || m.hits[s.ID] != nil {
 				keep = append(keep, s)
 			}
 		}
@@ -764,11 +774,46 @@ func (m *model) switchProfile(delta int) tea.Cmd {
 	n := len(m.profiles)
 	m.profile = ((m.profile+delta)%n + n) % n
 	m.cursor, m.offset = 0, 0
+	m.hits = nil
 	m.rebuildRows()
 	if !m.pd().loaded {
 		return m.reloadCmd()
 	}
 	return nil
+}
+
+// scanCmd searches the files of the tab's sessions for the filter's terms.
+func (m *model) scanCmd() tea.Cmd {
+	var sessions []*Session
+	for _, g := range m.pd().groups {
+		sessions = append(sessions, g.Sessions...)
+	}
+	profile, filter := m.profiles[m.profile], m.filter
+	return func() tea.Msg {
+		return scanMsg{profile: profile, filter: filter, hits: scanSessions(sessions, filterTerms(filter))}
+	}
+}
+
+// highlight renders every occurrence of the terms in text in bold,
+// ignoring case.
+func highlight(text string, terms []string) string {
+	var b strings.Builder
+	for i := 0; i < len(text); {
+		n := 0
+		for _, t := range terms {
+			if i+len(t) <= len(text) && strings.EqualFold(text[i:i+len(t)], t) {
+				n = max(n, len(t))
+			}
+		}
+		if n == 0 {
+			b.WriteByte(text[i])
+			i++
+			continue
+		}
+		b.WriteString(styleKey.Render(text[i : i+n]))
+		i += n
+	}
+	return b.String()
 }
 
 func (m model) selected() (*Group, *Session) {
@@ -994,6 +1039,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case scanMsg:
+		// Results for a filter or tab that changed meanwhile are stale.
+		if msg.profile != m.profiles[m.profile] || msg.filter != m.filter {
+			return m, nil
+		}
+		m.scanning = false
+		m.hits = msg.hits
+		m.status = ""
+		if len(msg.hits) == 0 {
+			m.status = styleDim.Render("no conversation mentions " + m.filter)
+		}
+		m.rebuildRows()
+		return m, nil
+
 	case rescanMsg:
 		// Pick up sessions started outside the TUI or in spawned terminals.
 		if m.mode == modeList {
@@ -1076,14 +1135,20 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case modeFilter:
 		switch key {
 		case "esc":
-			m.filter, m.input = "", ""
+			m.filter, m.input, m.hits = "", "", nil
 			m.mode = modeList
 			m.rebuildRows()
 		case "enter":
 			m.mode = modeList
+			if m.filter != "" && m.hits == nil && !m.scanning {
+				m.scanning = true
+				m.status = styleDim.Render("searching conversation texts for " + m.filter + "…")
+				return m, m.scanCmd()
+			}
 		default:
 			m.input = editText(m.input, msg)
 			m.filter = m.input
+			m.hits = nil
 			m.rows, m.cursor, m.offset = m.rows[:0], 0, 0 // cursor on the best match
 			m.rebuildRows()
 		}
@@ -1245,7 +1310,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input = m.filter
 	case "esc":
 		if m.filter != "" {
-			m.filter = ""
+			m.filter, m.hits = "", nil
 			m.rebuildRows()
 		}
 	case "r":
@@ -1587,6 +1652,11 @@ func (m model) listView(w int) string {
 		if s.Archived {
 			titleText += "  [archived]"
 		}
+		// A session that is listed only because its conversation mentions
+		// the filter is marked, since its title does not show why.
+		if m.hits[s.ID] != nil && !matches(s, m.filter) {
+			titleText = "≈ " + titleText
+		}
 		// In the session list, a session's newest open MR is marked at the
 		// end of its title; the MR view lists them under it instead.
 		mrMark := ""
@@ -1723,7 +1793,13 @@ func (m model) statusView(w int) string {
 		if s.Running {
 			detail = fmt.Sprintf("%s (pid %d) ", s.Status, s.PID) + detail
 		}
-		return " " + truncate(detail, w-2)
+		lines := []string{" " + truncate(detail, w-2)}
+		// Under a content search, the lines of the conversation that
+		// mention the terms follow, with the terms highlighted.
+		for _, snip := range m.hits[s.ID] {
+			lines = append(lines, " "+styleDim.Render("≈ ")+highlight(truncate(snip, w-4), filterTerms(m.filter)))
+		}
+		return strings.Join(lines, "\n")
 	}
 	if g, _ := m.selected(); g != nil {
 		return " " + truncate(shortPath(g.Repo)+"  "+styleDim.Render("enter starts a new session in this repository"), w-2)
@@ -1747,7 +1823,7 @@ func (m model) keysView(w int) string {
 	var parts []string
 	switch m.mode {
 	case modeFilter:
-		parts = []string{k("type", "to filter"), k("enter", "keep"), k("esc", "clear")}
+		parts = []string{k("type", "to filter"), k("enter", "search conversation texts too"), k("esc", "clear")}
 	case modeRepo:
 		if len(m.compl) > 0 {
 			return " " + truncate(strings.Join(m.compl, "  "), w-1)
@@ -1818,6 +1894,8 @@ func (m model) helpView() string {
 		"",
 		"  Filter       /  terms (all must match): fuzzy on the title, substring on prompt,",
 		"                  branch, worktree and path, prefix of the session ID",
+		"               enter in the prompt also searches the conversation texts (prompts,",
+		"                  replies, tool output); hits are marked ≈ and previewed under the list",
 		"",
 		"  Other        a  archive/unarchive    A  show archived    R  rename",
 		"               s  next sort key (activity, path, name, branch)    S  reverse the order",
