@@ -34,7 +34,7 @@ to be sent on. Here they are your Claude sessions.
   a new window.
 - Start new sessions in a fresh git worktree, with a branch name of your
   choosing.
-- Rename, archive and filter sessions.
+- Rename, archive and filter sessions, and move a session to another profile.
 - Optionally, the open merge requests on GitLab, GitHub or Gitea that belong
   to each session (see [Merge requests](#merge-requests)).
 - Reads Claude's files; the only write is a rename record (see
@@ -110,6 +110,7 @@ Navigation is vim-style.
 | `n` | new session: asks for a repository, then a name (creates a git worktree) |
 | `N` | same, without a worktree |
 | `R` | rename the selected session |
+| `M` | move the selected session to another profile (see [State and writes](#state-and-writes)) |
 | `a` | archive or unarchive the selected session |
 | `A` | show or hide archived sessions |
 | `/` | filter sessions by title, prompt, branch or path; `enter` also searches conversation texts (see [Search](#search)) |
@@ -332,9 +333,18 @@ tag, and `a` on one of those brings it back.
 Renaming appends a `custom-title` line to the session's file, the same
 record Claude Code writes for `/rename` and `--name`, so the new name also
 shows up in Claude's own `/resume` picker. Custom titles take precedence over
-the AI-generated title in the list. That is the only write reserva makes
-to Claude's directories. Its own state (archived sessions, the merge request
-cache) lives under `~/.local/state/reserva/`.
+the AI-generated title in the list.
+
+Moving a session (`M`, then the target profile's name; `tab` completes it)
+moves its `.jsonl` file, and the directory of the same name next to it when
+there is one, into the matching `projects/` directory of the other profile's
+config dir. Claude then resumes it with that profile's login, under the same
+ID. A running session is not moved, and an existing file in the target is
+never overwritten.
+
+Those two, the rename record and the move, are the only writes reserva
+makes to Claude's directories. Its own state (archived sessions, the merge
+request cache) lives under `~/.local/state/reserva/`.
 
 ### Flags
 

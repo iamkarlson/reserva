@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -392,4 +393,31 @@ func gitRoot(dir string) string {
 		}
 		d = parent
 	}
+}
+
+// moveSession moves a session's file, and the directory of the same name
+// next to it when there is one, into the matching projects/ directory of
+// another profile. The session then belongs to that profile and is resumed
+// with its login; the ID does not change.
+func moveSession(s *Session, to Profile) error {
+	dir := filepath.Join(expandHome(to.ConfigDir), "projects", filepath.Base(filepath.Dir(s.Path)))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	dst := filepath.Join(dir, filepath.Base(s.Path))
+	if _, err := os.Stat(dst); err == nil {
+		return fmt.Errorf("%s already exists", dst)
+	}
+	if err := os.Rename(s.Path, dst); err != nil {
+		return err
+	}
+	side := strings.TrimSuffix(s.Path, ".jsonl")
+	if st, err := os.Stat(side); err == nil && st.IsDir() {
+		if err := os.Rename(side, strings.TrimSuffix(dst, ".jsonl")); err != nil {
+			return err
+		}
+	}
+	s.Path = dst
+	s.Profile = to.Name
+	return nil
 }
