@@ -79,6 +79,16 @@ nix run github:ai-reserva/reserva
 `nix develop` in a checkout gives a shell with Go, gopls, golangci-lint and
 delve.
 
+For zsh completion of the flags and profile names, put
+[`completions/_reserva`](completions/_reserva) in a directory on your `fpath`,
+for example:
+
+```sh
+mkdir -p ~/.zsh/completions && cp completions/_reserva ~/.zsh/completions/
+# in ~/.zshrc, before compinit:
+fpath+=~/.zsh/completions
+```
+
 Then run `reserva`. On first run it writes a config file with every
 Claude profile it finds (see [Configuration](#configuration)).
 

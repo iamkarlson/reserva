@@ -1,0 +1,17 @@
+#compdef reserva
+
+# zsh completion for reserva. Profile names come from the config file
+# ([profiles.<name>] tables), or from --config when it is on the line.
+
+_reserva_profiles() {
+  local config=${opt_args[--config]:-${XDG_CONFIG_HOME:-$HOME/.config}/reserva/config.toml}
+  local -a names
+  names=(all ${(f)"$(sed -n 's/^\[profiles\.\(.*\)\]$/\1/p' ${~config} 2>/dev/null | tr -d '"')"})
+  _describe -t profiles 'profile' names
+}
+
+_arguments -s \
+  '--profile[open this profile first]:profile:_reserva_profiles' \
+  '--config[use another config file]:config file:_files -g "*.toml"' \
+  '--list[print the sessions and exit]' \
+  '--help[print the flags, a key reference and the config path]'
