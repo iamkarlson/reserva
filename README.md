@@ -119,7 +119,7 @@ Navigation is vim-style.
 | `s` / `S` | next sort key (activity, path, name, branch) / reverse the order |
 | `m` | toggle the [merge request](#merge-requests) view |
 | `r` | reload (and refetch merge requests) |
-| `?` | help |
+| `?` | help (`j` / `k`, `ctrl+d` / `ctrl+u`, `g` / `G` scroll it when it does not fit) |
 | `q` | quit |
 
 `n` first asks for the repository. The prompt is prefilled with the selected
