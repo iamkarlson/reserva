@@ -1815,7 +1815,14 @@ func (m model) keysView(w int) string {
 		} else if m.hasForges() {
 			parts = append(parts, k("m", "MRs"))
 		}
+		parts = append(parts, k("R", "rename"), k("s", "sort"), k("z", "fold"))
 		parts = append(parts, k("h/l", "profile"), k("/", "filter"), k("f", "find"), k("?", "help"), k("q", "quit"))
+		// A narrow terminal keeps the keys that open a session and the last
+		// five; the ones between them go first, from the right.
+		const tail = 5
+		for len(parts) > tail+2 && lipgloss.Width(strings.Join(parts, "  ")) > w-1 {
+			parts = slices.Delete(parts, len(parts)-tail-1, len(parts)-tail)
+		}
 	}
 	return " " + truncate(strings.Join(parts, "  "), w-1)
 }
