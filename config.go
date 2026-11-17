@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -195,7 +197,7 @@ func discoverConfigDirs() []Profile {
 	for _, p := range out {
 		taken[p.Name] = true
 	}
-	return append(out, discoverClaudeSwapDirs(taken)...)
+	return append(out, discoverClaudeSwapDirs(taken, nil)...)
 }
 
 // discoverClaudeSwapDirs finds the per-account profiles of claude-swap
@@ -203,7 +205,8 @@ func discoverConfigDirs() []Profile {
 // with "@" written as "_". The profile is named after the email's local
 // part, with the account number appended when that is taken (by another
 // account or by one of the profiles in taken, which is updated).
-func discoverClaudeSwapDirs(taken map[string]bool) []Profile {
+// Directories in known are left out.
+func discoverClaudeSwapDirs(taken, known map[string]bool) []Profile {
 	data := os.Getenv("XDG_DATA_HOME")
 	if data == "" {
 		home, _ := os.UserHomeDir()
@@ -213,7 +216,7 @@ func discoverClaudeSwapDirs(taken map[string]bool) []Profile {
 	sort.Strings(entries)
 	var out []Profile
 	for _, e := range entries {
-		if _, err := os.Stat(filepath.Join(e, "projects")); err != nil {
+		if _, err := os.Stat(filepath.Join(e, "projects")); err != nil || known[e] {
 			continue
 		}
 		base := filepath.Base(e)
@@ -297,4 +300,73 @@ func writeDefaultConfig(path string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// newClaudeSwapProfiles returns the claude-swap accounts whose directory
+// is not a profile in the config yet.
+func (c *Config) newClaudeSwapProfiles() []Profile {
+	taken := map[string]bool{allProfile: true}
+	dirs := map[string]bool{}
+	for name, p := range c.Profiles {
+		taken[name] = true
+		dirs[filepath.Clean(p.ConfigDir)] = true
+	}
+	return discoverClaudeSwapDirs(taken, dirs)
+}
+
+// declinedPath is where the claude-swap accounts the user did not want as
+// profiles are remembered, next to the other state.
+func declinedPath() string {
+	return filepath.Join(filepath.Dir(defaultStatePath()), "cswap-declined.json")
+}
+
+// importClaudeSwap adds the claude-swap accounts that are not in the config
+// as profiles and returns the config to use. With force (--import-cswap) it
+// adds them all. Otherwise it asks on out and reads the answer from in, and
+// only about accounts that were not declined before; a nil in asks nothing.
+// The profiles are appended to the config file, the rest of it stays as
+// written.
+func importClaudeSwap(cfg *Config, force bool, in io.Reader, out io.Writer) (*Config, error) {
+	found := cfg.newClaudeSwapProfiles()
+	// The set of declined directories has the shape of the archive state.
+	declined := loadArchive(declinedPath())
+	if !force {
+		found = slices.DeleteFunc(found, func(p Profile) bool { return declined.ids[p.ConfigDir] })
+	}
+	if len(found) == 0 {
+		if force {
+			fmt.Fprintln(out, "reserva: no claude-swap accounts to add")
+		}
+		return cfg, nil
+	}
+	if !force {
+		if in == nil {
+			return cfg, nil
+		}
+		fmt.Fprintf(out, "reserva: claude-swap accounts that are not in %s:\n", shortPath(cfg.path))
+		for _, p := range found {
+			fmt.Fprintf(out, "  %s  %s\n", p.Name, p.ConfigDir)
+		}
+		fmt.Fprint(out, "Add them as profiles? [Y/n] ")
+		line, _ := bufio.NewReader(in).ReadString('\n')
+		if ans := strings.ToLower(strings.TrimSpace(line)); ans != "" && ans != "y" && ans != "yes" {
+			for _, p := range found {
+				declined.ids[p.ConfigDir] = true
+			}
+			fmt.Fprintln(out, "Not added. reserva --import-cswap adds them later.")
+			return cfg, declined.save()
+		}
+	}
+	f, err := os.OpenFile(cfg.path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range found {
+		fmt.Fprintf(f, "\n[profiles.%s]\nconfig_dir = %q\n", tomlKey(p.Name), p.ConfigDir)
+		fmt.Fprintf(out, "reserva: added profile %s (%s)\n", p.Name, p.ConfigDir)
+	}
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
+	return loadConfig(cfg.path)
 }

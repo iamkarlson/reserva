@@ -233,6 +233,11 @@ one config dir per account under
 local part of the email (`georgy` for `georgy@example.com`). Each profile is a
 `CLAUDE_CONFIG_DIR`.
 
+When claude-swap gets an account after that first run, reserva asks at the
+next start whether to add it as a profile. A "no" is remembered and not
+asked again; `reserva --import-cswap` adds the accounts later. The profiles
+are appended to the config file, the rest of it is left as written.
+
 ```toml
 default_profile = "work"
 claude_bin = "claude"
@@ -361,6 +366,7 @@ cache) lives under `~/.local/state/reserva/`.
 | `--profile <name>` | open this profile first |
 | `--config <path>` | use another config file |
 | `--list` | print the sessions and exit |
+| `--import-cswap` | add the claude-swap accounts that are not in the config as profiles |
 | `--help` | print the flags, a short key reference and the config path |
 
 ## macOS notes

@@ -22,7 +22,7 @@ func TestDiscoverClaudeSwapDirs(t *testing.T) {
 	}
 
 	taken := map[string]bool{"default": true, "work": true}
-	got := discoverClaudeSwapDirs(taken)
+	got := discoverClaudeSwapDirs(taken, nil)
 	want := []Profile{
 		{Name: "georgy", ConfigDir: "~/.local/share/claude-swap/sessions/1-georgy_example.com"},
 		{Name: "georgy-2", ConfigDir: "~/.local/share/claude-swap/sessions/2-georgy_work.example"},

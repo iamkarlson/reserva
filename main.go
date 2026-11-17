@@ -5,6 +5,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	tea "charm.land/bubbletea/v2"
@@ -12,15 +13,25 @@ import (
 
 func main() {
 	var (
-		configPath = flag.String("config", "", "path to config.toml (default ~/.config/reserva/config.toml)")
-		profile    = flag.String("profile", "", "profile to open first")
-		list       = flag.Bool("list", false, "print sessions and exit")
+		configPath  = flag.String("config", "", "path to config.toml (default ~/.config/reserva/config.toml)")
+		profile     = flag.String("profile", "", "profile to open first")
+		list        = flag.Bool("list", false, "print sessions and exit")
+		importCswap = flag.Bool("import-cswap", false, "add the claude-swap (cswap) accounts that are not in the config as profiles")
 	)
 	flag.Usage = usage
 	flag.Parse()
 
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "reserva:", err)
+		os.Exit(1)
+	}
+	// Ask about new claude-swap accounts only when someone can answer.
+	var answers io.Reader
+	if st, err := os.Stdin.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 && !*list {
+		answers = os.Stdin
+	}
+	if cfg, err = importClaudeSwap(cfg, *importCswap, answers, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "reserva:", err)
 		os.Exit(1)
 	}
@@ -81,7 +92,7 @@ func usage() {
 	w := flag.CommandLine.Output()
 	fmt.Fprintln(w, "reserva: a terminal UI for Claude Code sessions across several profiles.")
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Usage: reserva [--profile <name>|all] [--config <path>] [--list]")
+	fmt.Fprintln(w, "Usage: reserva [--profile <name>|all] [--config <path>] [--list] [--import-cswap]")
 	fmt.Fprintln(w)
 	flag.PrintDefaults()
 	fmt.Fprint(w, `
