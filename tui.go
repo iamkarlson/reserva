@@ -85,6 +85,7 @@ type model struct {
 	rows       []row
 	cursor     int
 	offset     int
+	helpTop    int // first visible line of the help screen
 	width      int
 	height     int
 	mode       mode
@@ -1087,9 +1088,25 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	switch m.mode {
 	case modeHelp:
-		if key == "esc" || key == "q" || key == "?" {
+		half := max(1, m.listHeight()/2)
+		switch key {
+		case "esc", "q", "?":
 			m.mode = modeList
+		case "j", "down":
+			m.helpTop++
+		case "k", "up":
+			m.helpTop--
+		case "ctrl+d", "pgdown", "space":
+			m.helpTop += half
+		case "ctrl+u", "pgup":
+			m.helpTop -= half
+		case "g", "home":
+			m.helpTop = 0
+		case "G", "shift+g", "end":
+			m.helpTop = len(m.helpLines())
 		}
+		// Keep the last line at the bottom at most, the first at the top at least.
+		m.helpTop = max(0, min(m.helpTop, len(m.helpLines())-m.listHeight()))
 		return m, nil
 
 	case modeFind:
@@ -1189,6 +1206,7 @@ func (m model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.mode = modeHelp
+		m.helpTop = 0
 	case "j", "down":
 		m.move(1)
 	case "k", "up":
@@ -1816,7 +1834,10 @@ func (m model) keysView(w int) string {
 		_, s := m.selected()
 		parts = []string{k(fmt.Sprintf("1-%d", len(m.moveTargets(s))), "move to that profile"), k("j/k", "choose"), k("enter", "move"), k("esc", "cancel")}
 	case modeHelp:
-		parts = []string{k("esc", "back")}
+		if len(m.helpLines()) > m.listHeight() {
+			parts = []string{k("j/k", "scroll"), k("ctrl+d/u", "half page")}
+		}
+		parts = append(parts, k("esc", "back"))
 	case modeFind:
 		if m.find.normal {
 			parts = []string{k("j/k", "session"), k("n/N", "next/prev match"), k("enter", "resume "+m.where(false)),
@@ -1848,7 +1869,8 @@ func (m model) keysView(w int) string {
 	return " " + truncate(strings.Join(parts, "  "), w-1)
 }
 
-func (m model) helpView() string {
+// helpLines is the whole help text, one entry per line.
+func (m model) helpLines() []string {
 	lines := []string{
 		"  Navigation   j/k ↑/↓ move   gg/G top/bottom   ctrl+d/u half page   ]/[ next/prev project",
 		"               h/l, 1-9, tab switch profile; the all tab lists every profile's sessions",
@@ -1898,12 +1920,22 @@ func (m model) helpView() string {
 			"  Note         this terminal did not enable the kitty keyboard protocol, so shift+enter",
 			"               and ctrl+enter look like plain enter; use the o / O / t / T fallbacks.")
 	}
+	return lines
+}
+
+// helpView is the part of the help that fits, from line helpTop on. When
+// lines are cut off below, the last visible one says how many.
+func (m model) helpView() string {
+	lines := m.helpLines()
 	h := m.listHeight()
+	top := max(0, min(m.helpTop, len(lines)-h))
+	lines = lines[top:]
 	for len(lines) < h {
 		lines = append(lines, "")
 	}
 	if len(lines) > h {
-		lines = lines[:h]
+		more := len(lines) - h + 1
+		lines = append(lines[:h-1:h-1], styleDim.Render(fmt.Sprintf("  … %d more lines (j/k scroll)", more)))
 	}
 	return strings.Join(lines, "\n") + "\n"
 }
