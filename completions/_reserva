@@ -13,5 +13,6 @@ _reserva_profiles() {
 _arguments -s \
   '--profile[open this profile first]:profile:_reserva_profiles' \
   '--config[use another config file]:config file:_files -g "*.toml"' \
+  '--import-cswap[add the claude-swap accounts that are not in the config as profiles]' \
   '--list[print the sessions and exit]' \
   '--help[print the flags, a key reference and the config path]'
